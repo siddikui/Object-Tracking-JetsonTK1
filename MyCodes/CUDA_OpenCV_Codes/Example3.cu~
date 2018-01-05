@@ -1,0 +1,89 @@
+#include<iostream>
+#include<cstdio>
+#include<opencv2/core/core.hpp>
+#include<opencv2/highgui/highgui.hpp>
+#include<opencv2/imgproc/imgproc.hpp>
+#include<cuda_runtime.h>
+
+using std::cout;
+using std::endl;
+
+
+
+__global__ void bgr_to_gray_kernel( unsigned char* input, unsigned char* output, int width,
+int height,int colorWidthStep,	int grayWidthStep)
+{
+	
+	const int xIndex = blockIdx.x * blockDim.x + threadIdx.x;
+	const int yIndex = blockIdx.y * blockDim.y + threadIdx.y;
+
+	
+	if((xIndex<width) && (yIndex<height))
+	{
+		
+		const int color_tid = yIndex * colorWidthStep +  xIndex;
+		
+		//Location of gray pixel in output
+		
+
+		
+
+		output[color_tid] = static_cast<unsigned char>(2*input[color_tid]);
+	}
+}
+
+void convert_to_gray(const cv::Mat& input, cv::Mat& output)
+{
+	
+	const int inputBytes = input.step * input.rows;
+	const int outputBytes = output.step * output.rows;
+
+	unsigned char *d_input, *d_output;
+
+	
+	cudaMalloc<unsigned char>(&d_input,inputBytes);
+	cudaMalloc<unsigned char>(&d_output,outputBytes);
+
+	
+	cudaMemcpy(d_input,input.ptr(),inputBytes,cudaMemcpyHostToDevice);
+
+	
+	const dim3 block(16,16);
+
+	
+	const dim3 grid((input.cols + block.x - 1)/block.x, (input.rows + block.y - 1)/block.y);
+
+	
+	bgr_to_gray_kernel<<<grid,block>>>(d_input,d_output,input.cols,input.rows,input.step,output.step);
+
+	
+	cudaDeviceSynchronize();
+
+	
+	cudaMemcpy(output.ptr(),d_output,outputBytes,cudaMemcpyDeviceToHost);
+
+	
+	cudaFree(d_input);
+	cudaFree(d_output);
+}
+
+
+
+using namespace std;
+
+int main(int argc, char** argv)
+{
+	
+	cv::Mat input = cv::imread(argv[1],-1);
+	if(!input.data) return -1;
+
+	cv::Mat output(input.rows,input.cols);	 		
+                
+		convert_to_gray(input,output);	
+		cv::imshow("Input",input);
+		cv::imshow("Output",output);		
+		cv::waitKey(0);
+	
+	
+return 0;
+}

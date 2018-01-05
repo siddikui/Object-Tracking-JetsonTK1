@@ -1,0 +1,173 @@
+#include<stdio.h>
+#include<stdlib.h>
+#include<cuda.h>
+#include <time.h>
+
+
+#define Mask_size 3  //filter size
+#define Width   1024 // image width
+#define Height 1024   // image height
+
+#define N (Width*Height)
+
+//---------------kernel-------------------
+
+__global__ void ConvolutionKernel (int *I_input, int *Mask1,int *Mask2,int *I_output1,int *I_output2)
+{
+     	/* Thread Row Index */
+	int Row = blockIdx.y * blockDim.y + threadIdx.y;    
+    	/* Thread column Index */
+	int Col = blockIdx.x * blockDim.x + threadIdx.x; 
+
+    	float value1 = 0;
+	float value2 = 0;
+
+
+	int Index = Row*Width+Col; //output Image index
+    
+/* convolution */
+
+    for(int i=0; i<Mask_size; i++) 
+	{
+        for(int j=0; j<Mask_size; j++) 
+		{
+                   int  R_start = i + Row - 1;
+                   int  C_start = j + Col - 1;
+                         if((C_start>= 0 && C_start < Width) && (R_start>= 0 && R_start < Height))
+						 {
+                              	value1 += Mask1[i * Mask_size + j] * I_input[R_start* Width + C_start];
+				value2 += Mask2[i * Mask_size + j] * I_input[R_start* Width + C_start];
+			
+						 }
+        }
+    }
+     
+	 if((Row < Height) && (Col < Width)) {
+            	I_output1[Index] = value1; // convolved image
+		I_output2[Index] = value2;
+	
+    }
+}
+
+//----------------------------main-----------------------------------
+
+int main(void)
+{
+	
+//-------------------------------------------------------------------
+
+	int *Image, *Output1,*Output2;
+	int *mask1, *mask2;
+	int SIZE= Width*Height*sizeof(int);
+	int Row,Col;
+
+	Image=	(int *)malloc(SIZE);
+	Output1= (int *)malloc(SIZE);
+	Output2= (int *)malloc(SIZE);
+	mask1= (int *)malloc(Mask_size*Mask_size*sizeof(int));
+	mask2= (int *)malloc(Mask_size*Mask_size*sizeof(int));
+
+	//-------------------------------------------------------------------
+
+	int *d_image, *d_mask1,*d_mask2,*d_output1, *d_output2; /* pointer to device memory 		
+	
+												for input image, mask and output */
+	//-----------------------------------------------------------
+	
+	for(Row=0;Row<Width;Row++)
+		for(Col=0;Col<Height;Col++)
+		{
+			Image[Row*Width+Col]=1;
+			Output1[Row*Width+Col]=0;
+			Output2[Row*Width+Col]=0;
+					
+		}
+	
+	//-----------------------------------------------------------
+
+	for(Row=0;Row<Mask_size;Row++) 
+		for(Col=0;Col<Mask_size;Col++)
+	{ 
+			mask1[Row*Mask_size+Col]=1;
+			mask2[Row*Mask_size+Col]=2;
+	
+	}
+		
+	//------------------------------------------------------
+
+	/* Device Memory Allocation */
+	cudaMalloc(&d_image, (Width*Height)* sizeof(int));
+	cudaMalloc(&d_output1, (Width*Height)* sizeof(int));
+	cudaMalloc(&d_output2, (Width*Height)* sizeof(int));
+	cudaMalloc(&d_mask1, (Mask_size*Mask_size)* sizeof(int));
+	cudaMalloc(&d_mask2, (Mask_size*Mask_size)* sizeof(int));
+	
+
+	//---------------------------------------------------------
+
+	cudaEvent_t start, stop;       // Cuda API to measure time for Cuda Kernel Execution.
+	cudaEventCreate(&start);
+	cudaEventCreate(&stop);
+
+	cudaEventRecord(start);
+	
+	//--------------------------------------------------------
+	
+	/*Copying Input Image to GPU Memory */
+	cudaMemcpy(d_image, Image, (Width*Height)* sizeof(int), cudaMemcpyHostToDevice); 
+
+	/*Copying Mask to GPU Memory */
+	cudaMemcpy(d_mask1, mask1, (Mask_size*Mask_size)* sizeof(int), cudaMemcpyHostToDevice); 
+	cudaMemcpy(d_mask2, mask2, (Mask_size*Mask_size)* sizeof(int), cudaMemcpyHostToDevice); 
+	
+	/* Two Dimesional blocks with two dimensional threads */
+	dim3 grid(((Width)/Mask_size),((Height)/Mask_size));
+
+	/*Number of threads per block is 3x3=9 */	
+	dim3 block(Mask_size,Mask_size); 
+
+	//---------------------------------------------
+
+	printf ("GPU Executing Convolution Kernel...\n") ;
+	printf("\n");
+		
+	//--------------------------------------------
+
+	/*Kernel Launch configuration*/	
+	ConvolutionKernel <<<grid, block >>>(d_image, d_mask1,d_mask2,d_output1, d_output2); 
+	
+	/*copying output Image to Host Memory*/
+	cudaMemcpy(Output1, d_output1, (Width*Height)* sizeof(int), cudaMemcpyDeviceToHost);
+	cudaMemcpy(Output2, d_output2, (Width*Height)* sizeof(int), cudaMemcpyDeviceToHost);
+
+	//-------------------------------------------
+	
+	cudaEventRecord(stop);
+
+	cudaEventSynchronize(stop);			// Blocks CPU execution until Device Kernel finishes its job.
+	
+	float milliseconds = 0;
+	cudaEventElapsedTime(&milliseconds, start, stop);   	
+	
+	printf("GPU Execution Time for Convolution Kernel: %fn\n", milliseconds); //GPU Execution Time.
+	printf("Effective Bandwidth (GB/s): %fn\n", N*4*2/milliseconds/1e6); 
+	//N*4 is the total number of Bytes transferred and (1+1)=2 is for read Input Image and write Output Image.
+	printf("\n");
+
+	//------------------------------------------
+	free(Image);
+	free(Output1);
+	free(Output2);
+	free(mask1);
+	free(mask2);
+	
+	cudaFree(d_image);
+	cudaFree(d_mask1);
+	cudaFree(d_mask2);
+	cudaFree(d_output1);
+	cudaFree(d_output2);
+	
+	
+return 0;
+}
+

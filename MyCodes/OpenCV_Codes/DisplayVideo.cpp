@@ -1,0 +1,34 @@
+#include<opencv2/highgui/highgui.hpp>
+#include<opencv2/imgproc/imgproc.hpp>
+
+using namespace std;
+
+int main(int argc, char** argv)
+{
+	
+	cv::VideoCapture capA;
+	cv::VideoCapture capB;
+	capA.open(0);
+	capB.open(1);
+	cv:: Mat frameA;
+	cv:: Mat frameB;
+
+	while(1)
+	{
+		capA>>frameA;
+		if(!frameA.data) break;
+
+		capB>>frameB;
+		if(!frameB.data) break;
+
+		cv::imshow("CAM A",frameA);
+		cv::imshow("CAM B",frameB);
+
+		if(cv::waitKey(33)>=0) break;
+
+	
+	}
+	
+
+return 0;
+}

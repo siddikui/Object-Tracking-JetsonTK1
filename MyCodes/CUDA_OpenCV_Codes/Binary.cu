@@ -1,0 +1,42 @@
+#include <iostream>
+#include <opencv2/opencv.hpp>
+
+int main (int argc, char **argv)
+{
+
+    if (argc != 2)
+    {
+            std::cout << "USE: " << argv[0] << " <file_path>" << std::endl;
+            return 1;
+    }
+
+    cv::Mat image = cv::imread(argv[1], CV_LOAD_IMAGE_COLOR);
+
+    if (image.empty())
+    {
+            std::cerr << "ERROR: Could not read image " << argv[1] << std::endl;
+            return 1;
+    }
+
+    cv::Mat gray (image.rows,image.cols,CV_8U);    
+
+    cv::cvtColor( image, gray, CV_BGR2GRAY);  
+
+    cv::Mat binary(gray.rows, gray.cols,gray.type());
+
+    cv::threshold(gray, binary, 100, 255, cv::THRESH_BINARY);  
+
+	 
+
+    cv::namedWindow("Output", cv::WINDOW_AUTOSIZE);
+	
+    cv::imshow("Input", image);
+
+    cv::imshow("Gray", gray);
+	
+    cv::imshow("Binary", binary);
+
+    cv::waitKey(0);
+
+    return 0;
+}

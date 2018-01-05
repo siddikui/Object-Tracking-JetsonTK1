@@ -1,0 +1,121 @@
+#include<iostream>
+#include<cstdio>
+#include<opencv2/core/core.hpp>
+#include<opencv2/highgui/highgui.hpp>
+#include<opencv2/imgproc/imgproc.hpp>
+#include<cuda_runtime.h>
+
+using std::cout;
+using std::endl;
+
+__global__ void bgr_to_gray_kernel( unsigned char* input, unsigned char* output, int width,
+int height,int grayWidthStep)
+{
+	
+	const int xIndex = blockIdx.x * blockDim.x + threadIdx.x;
+	const int yIndex = blockIdx.y * blockDim.y + threadIdx.y;
+
+
+	//float Mask[3*3]={1,2,1,0,0,0,-1,-2,-1};	
+	float Mask[3*3]={1,1,1,1,1,1,1,1,1};	
+
+	unsigned char Temp[640*480];
+
+	if((xIndex>0)  && (yIndex>0) && (xIndex<width) && (yIndex<height))
+	{
+			
+		const int gray_tid  = yIndex * grayWidthStep + xIndex;
+
+		if(input[gray_tid]<100)
+		Temp[gray_tid]=0;
+		else
+		Temp[gray_tid]=255;
+
+		__syncthreads();
+
+		int i,j;
+		float Sum=0;
+
+		for(i=-1;i<=1;i++)
+		for(j=-1;j<=1;j++)
+		Sum += Temp[(yIndex+i)*grayWidthStep + (xIndex+j)]*Mask[(i+1)*3+(j+1)];
+
+		if(Sum>=255)
+		output[gray_tid]=static_cast<unsigned char>(255);
+		else
+		output[gray_tid]=static_cast<unsigned char>(0);
+		
+		__syncthreads();		
+		
+		//Temp[gray_tid] = static_cast<unsigned char>(Sum);
+		//output[gray_tid]=Temp[gray_tid];
+	}
+}
+
+void convert_to_gray(const cv::Mat& input, cv::Mat& output)
+{
+	
+	
+	const int grayBytes = input.step * input.rows;
+
+	unsigned char *d_input, *d_output;
+
+	
+	cudaMalloc<unsigned char>(&d_input,grayBytes);
+	cudaMalloc<unsigned char>(&d_output,grayBytes);
+
+	
+	cudaMemcpy(d_input,input.ptr(),grayBytes,cudaMemcpyHostToDevice);
+
+	
+	const dim3 block(16,16);
+
+	
+	const dim3 grid((input.cols + block.x - 1)/block.x, (input.rows + block.y - 1)/block.y);
+
+	
+	bgr_to_gray_kernel<<<grid,block>>>(d_input,d_output,input.cols,input.rows,input.step);
+
+	
+	cudaDeviceSynchronize();
+
+	
+	cudaMemcpy(output.ptr(),d_output,grayBytes,cudaMemcpyDeviceToHost);
+
+	
+	cudaFree(d_input);
+	cudaFree(d_output);
+}
+
+
+
+using namespace std;
+
+int main(int argc, char** argv)
+{
+	
+	cv::VideoCapture cap;
+	cap.open(0);
+	cv:: Mat Input;
+	cv:: Mat Gray;
+		
+
+	while(1)
+	{
+		cap>>Input;
+		if(!Input.data) break;
+
+		cvtColor(Input,Gray,CV_BGR2GRAY);
+
+ 		cv::Mat Output(Input.rows,Input.cols,CV_8UC1);
+
+		convert_to_gray(Gray,Output);
+	
+		cv::imshow("Input",Gray);
+		cv::imshow("Output",Output);		
+		if(cv::waitKey(33)>=0) break;
+	
+	}	
+
+return 0;
+}

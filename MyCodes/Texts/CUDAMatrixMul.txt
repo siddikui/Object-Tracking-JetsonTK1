@@ -1,0 +1,145 @@
+#include<stdio.h>
+#include<stdlib.h>
+#include<time.h>
+
+#define Width  4096   //Image Width and Height.
+# define Tile_Width 32
+
+#define N (Width*Width)
+
+__global__ void Matrix_Multiplication(int *D_M, int *D_N, int *D_P)
+{
+	int tx=blockIdx.x*Tile_Width+threadIdx.x;
+	int ty=blockIdx.y*Tile_Width+threadIdx.y;
+
+	int Sum=0;
+	//int M,N;
+
+	for(int k=0;k<Width;k++)
+	{
+		//int M=D_M[ty*Width+k];
+		//int N=D_N[k*Width+tx];
+		//Sum+=M*N;
+		Sum+=D_M[ty*Width+k]*D_N[k*Width+tx];	
+	}
+	D_P[ty*Width+tx]=Sum;
+
+}
+
+int main(void)
+{
+	int *H_M, *H_N, *H_P, *H_Y;
+	int *D_M, *D_N, *D_P;
+
+	int i,j,k;
+	int a,b;
+	int Sum;
+	int Size=N*sizeof(int);
+
+	clock_t Time_Start, Time_End, Time_Difference; // Clock used to measure time for CPU Matrix Multiplication execution.
+	double Time;
+	
+	printf("This is a Square Matrix Multiplication Program! \n");
+	printf("\n");	
+	printf("The Matrices are of Dimension %d\n",Width);	
+	printf("\n");
+		
+	H_M=(int *)malloc(Size);
+	H_N=(int *)malloc(Size);
+	H_P=(int *)malloc(Size);
+	H_Y=(int *)malloc(Size);
+
+	cudaMalloc(&D_M,Size);
+	cudaMalloc(&D_N,Size);
+	cudaMalloc(&D_P,Size);
+
+	
+
+	printf("Initializing the M and N Matrices on Host... \n");
+	printf("\n");
+	for(i=0;i<Width;i++)
+	for(j=0;j<Width;j++)
+	{
+		H_M[i*Width+j]=1;
+		H_N[i*Width+j]=1;
+		H_P[i*Width+j]=1;	
+	}
+	
+
+	
+	printf ("CPU Executing Matrix Multiplication Kernel...\n") ;
+	printf("\n");
+	Time_Start=clock(); // Start Time for CPU Multiplication Kernel
+
+	for(i=0;i<Width;i++)
+	for(j=0;j<Width;j++)
+	{
+		Sum=0;
+		for(k=0;k<Width;k++)
+		{
+			a=H_M[i*Width+k];
+			b=H_N[k*Width+j];
+			Sum+=a*b;
+		}
+		H_P[i*Width+j]=Sum;
+	}
+
+	Time_End=clock();
+	Time_Difference=Time_End-Time_Start;
+	Time=Time_Difference/(double)CLOCKS_PER_SEC ;
+
+	
+	
+	printf("\n");
+
+	cudaEvent_t start, stop;       // Cuda API to measure time for Cuda Kernel Execution.
+	cudaEventCreate(&start);
+	cudaEventCreate(&stop);
+
+	cudaEventRecord(start);
+
+	cudaMemcpy(D_M,H_M,Size,cudaMemcpyHostToDevice); // Copying Matrix M to GPU Memory.
+	cudaMemcpy(D_N,H_N,Size,cudaMemcpyHostToDevice); // Copying Matrix N to GPU Memory.
+
+	dim3 dimBlock(Tile_Width,Tile_Width); // Two Dimesional blocks with two dimensional threads.
+	dim3 dimGrid(Width/Tile_Width,Width/Tile_Width);             // 16*16=256, max number of threads per block is 512. 
+
+	
+	printf ("GPU Executing Matrix Multiplication Kernel...\n") ;
+	printf("\n");
+	
+	Matrix_Multiplication<<<dimGrid,dimBlock>>>(D_M,D_N,D_P); // Kernel Launch configuration.
+	
+	cudaMemcpy(H_Y,D_P,Size,cudaMemcpyDeviceToHost); // Copying results back to Host Memory.
+
+	cudaEventRecord(stop);
+
+	cudaEventSynchronize(stop);
+	float milliseconds = 0;
+	cudaEventElapsedTime(&milliseconds, start, stop);  
+		
+	/*for(i=0;i<Width;i++)
+	{	
+		for(j=0;j<Width;j++)
+		{
+		printf("%d ",H_Y[i*Width+j]);	
+		}	
+	printf("\n");	
+	}*/
+	printf("\n");
+	printf ("CPU time for Matrix Multiplication = %f ms\n", Time*1000) ;
+	printf("GPU Execution Time for Convolution Kernel: %fn\n", milliseconds); //GPU Execution Time.
+	printf("Effective Bandwidth (GB/s): %fn\n", N*4*2/milliseconds/1e6); 
+	
+
+	printf("\n");
+
+
+	cudaFree(H_M);
+	cudaFree(H_N);
+	cudaFree(H_P);
+	
+	free(H_M);
+	free(H_N);
+	free(H_P);
+	free(H_Y);

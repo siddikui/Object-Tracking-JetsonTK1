@@ -1,0 +1,50 @@
+/* 
+Program Name: CudaVectorAdd
+This program adds two vector arrays on GPU.
+*/
+#include <stdio.h>
+#define N 512
+// Device Vector Add Function.
+__global__ void add(int *a, int *b, int *c) 
+{
+   // Using blocks only.
+	int tid = threadIdx.x;
+    c[tid] = a[tid] + b[tid];
+}
+
+
+int main(){
+
+	int *a,*b,*c; // Host side pointers.	
+    int *dev_a, *dev_b, *dev_c; // Device side pointers.
+	//Host side memory allocation.
+	a=(int *)malloc(N*sizeof(int));
+	b=(int *)malloc(N*sizeof(int));
+	c=(int *)malloc(N*sizeof(int));
+	//Device side memory allocation.
+    cudaMalloc( (void**)&dev_a, N * sizeof(int) );
+    cudaMalloc( (void**)&dev_b, N * sizeof(int) );
+    cudaMalloc( (void**)&dev_c, N * sizeof(int) );
+	// Initializing Vectors
+    for (int i=0; i<N; i++) {
+        a[i] = i; b[i] = i;
+    }
+	//Copying data to the GPU.
+    cudaMemcpy ( dev_a, a, N * sizeof(int), cudaMemcpyHostToDevice );
+    cudaMemcpy ( dev_b, b, N * sizeof(int), cudaMemcpyHostToDevice );
+	// GPU kernel launch with one block and N=512 blocks.
+    
+	add<<<1,N>>>(dev_a, dev_b, dev_c);
+	// Copying results back to the Host.
+    cudaMemcpy(c, dev_c, N * sizeof(int),cudaMemcpyDeviceToHost );
+	//Printing results.
+    for (int i=0; i<N; i++)
+	{
+        printf("%d + %d = %d\n", a[i],b[i],c[i]);
+    }
+	// Freeing memory to keep the atmosphere clean.
+    free(a); free(b); free(c);
+	cudaFree (dev_a); cudaFree (dev_b); cudaFree (dev_c);
+
+    return 0;
+}

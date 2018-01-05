@@ -1,0 +1,92 @@
+#include<iostream>
+#include<cstdio>
+#include<opencv2/core/core.hpp>
+#include<opencv2/highgui/highgui.hpp>
+#include<cuda_runtime.h>
+
+#define Mask 3
+
+using std::cout;
+using std::endl;
+
+
+__global__ void bgr_to_gray_kernel( unsigned char* input,unsigned char* output,unsigned char *mask, int width,int height, int widthstep)
+{
+	
+	const int x = blockIdx.x * blockDim.x + threadIdx.x;
+	const int y = blockIdx.y * blockDim.y + threadIdx.y;
+
+	unsigned char Sum=0;	
+	
+	int i,j;
+
+	
+	if((x<width-1)&(y<height-1))
+		for(i=-1;i<2;i++)
+			for(j=-1;j<2;j++)
+			Sum+= (input[(y+i)*widthstep+(x+j)]*mask[(i+1)*Mask+(j+1)]);
+		 	
+	
+	
+	output[y*widthstep+x]=Sum;
+}
+
+void convert_to_gray(const cv::Mat& input, cv::Mat& output)
+{
+	
+	const int Bytes = input.step * input.rows;	
+
+	unsigned char *d_input, *d_output;
+
+	unsigned char *h_mask, *d_mask;
+
+	h_mask=(unsigned char *)malloc(Mask*Mask*sizeof(unsigned char));
+
+	for(int k=0; k<Mask*Mask;k++)
+	h_mask[k]=0.15;
+
+	cudaMalloc(&d_mask, Mask*Mask*sizeof(unsigned char));	
+	
+	cudaMalloc<unsigned char>(&d_input,Bytes);
+	cudaMalloc<unsigned char>(&d_output,Bytes);
+	
+	cudaMemcpy(d_input,input.ptr(),Bytes,cudaMemcpyHostToDevice);
+	cudaMemcpy(d_mask, h_mask, Mask*Mask*sizeof(unsigned char), cudaMemcpyHostToDevice);
+	
+	const dim3 block(32,32);
+	
+	const dim3 grid((input.cols + block.x - 1)/block.x, (input.rows + block.y - 1)/block.y);
+	
+	bgr_to_gray_kernel<<<grid,block>>>(d_input,d_output,d_mask,input.cols,input.rows,input.step);
+	
+	cudaDeviceSynchronize();
+	
+	cudaMemcpy(output.ptr(),d_output,Bytes,cudaMemcpyDeviceToHost);
+	
+	cudaFree(d_input);
+	cudaFree(d_output);
+}
+
+int main()
+{
+	std::string imagePath = "image.jpg";
+	
+	cv::Mat input = cv::imread(imagePath,CV_LOAD_IMAGE_GRAYSCALE);
+	cv::Mat output = cv::imread(imagePath,CV_LOAD_IMAGE_GRAYSCALE);
+
+	if(input.empty())
+	{
+		std::cout<<"Image Not Found!"<<std::endl;
+		std::cin.get();
+		return -1;
+	}
+	
+	convert_to_gray(input,output);
+
+	cv::imshow("Input",input);
+	cv::imshow("Output",output);
+	
+	cv::waitKey();
+
+	return 0;
+}
